@@ -1,21 +1,26 @@
 import datetime
 import os
+
 import pandas as pd
 import requests
 
+USE_IBKR = os.environ.get("USE_IBKR_API", "false").lower() == "true"
+if USE_IBKR:
+    from src.tools.ibkr import get_prices as ibkr_get_prices
+
 from src.data.cache import get_cache
 from src.data.models import (
+    CompanyFactsResponse,
     CompanyNews,
     CompanyNewsResponse,
     FinancialMetrics,
     FinancialMetricsResponse,
-    Price,
-    PriceResponse,
-    LineItem,
-    LineItemResponse,
     InsiderTrade,
     InsiderTradeResponse,
-    CompanyFactsResponse,
+    LineItem,
+    LineItemResponse,
+    Price,
+    PriceResponse,
 )
 
 # Global cache instance
@@ -32,6 +37,12 @@ def get_prices(ticker: str, start_date: str, end_date: str) -> list[Price]:
             return filtered_data
 
     # If not in cache or no data in range, fetch from API
+    if USE_IBKR:
+        prices = ibkr_get_prices(ticker, start_date, end_date)
+        if prices:
+            _cache.set_prices(ticker, [p.model_dump() for p in prices])
+        return prices
+
     headers = {}
     if api_key := os.environ.get("FINANCIAL_DATASETS_API_KEY"):
         headers["X-API-KEY"] = api_key

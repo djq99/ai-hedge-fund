@@ -91,6 +91,12 @@ GROQ_API_KEY=your-groq-api-key
 # For getting financial data to power the hedge fund
 # Get your Financial Datasets API key from https://financialdatasets.ai/
 FINANCIAL_DATASETS_API_KEY=your-financial-datasets-api-key
+
+# Optionally fetch data directly from Interactive Brokers
+# These settings connect to a running TWS or IB Gateway instance
+IBKR_HOST=127.0.0.1
+IBKR_PORT=7497
+IBKR_CLIENT_ID=1
 ```
 
 ### Using Docker
