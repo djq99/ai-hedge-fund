@@ -90,9 +90,6 @@ OPENAI_API_KEY=your-openai-api-key
 # Get your Groq API key from https://groq.com/
 GROQ_API_KEY=your-groq-api-key
 
-# For getting financial data to power the hedge fund
-# Get your Financial Datasets API key from https://financialdatasets.ai/
-FINANCIAL_DATASETS_API_KEY=your-financial-datasets-api-key
 ```
 
 ### Using Docker
@@ -129,27 +126,21 @@ run.bat build
 
 **Important**: You must set `OPENAI_API_KEY`, `GROQ_API_KEY`, `ANTHROPIC_API_KEY`, or `DEEPSEEK_API_KEY` for the hedge fund to work.  If you want to use LLMs from all providers, you will need to set all API keys.
 
-Financial data for AAPL, GOOGL, MSFT, NVDA, and TSLA is free and does not require an API key.
-
-For any other ticker, you will need to set the `FINANCIAL_DATASETS_API_KEY` in the .env file.
 
 ### Using IBKR
 
-To fetch financial data from Interactive Brokers (IBKR) instead of the default
-provider, you need to run the IB Gateway or TWS client and set a few
-environment variables:
+Financial data is fetched from Interactive Brokers (IBKR).  Run the IB Gateway
+or TWS client and set a few environment variables:
 
 ```bash
 # .env
-FINANCIAL_DATA_PROVIDER=ibkr
 IB_HOST=127.0.0.1       # change if your gateway is on another host
 IB_PORT=4002            # port configured for API access
 IB_CLIENT_ID=1          # any integer client id
 ```
 
 The hedge fund will then fetch prices and fundamentals from your running IBKR
-gateway. Leave these variables unset to use the default
-Financial Datasets API.
+gateway.
 
 ## Usage
 
