@@ -3,6 +3,15 @@ import os
 import pandas as pd
 import requests
 
+DATA_PROVIDER = os.getenv("FINANCIAL_DATA_PROVIDER", "financialdatasets").lower()
+
+if DATA_PROVIDER == "ibkr":
+    from src.tools.ibkr import IBKRClient
+
+    _ibkr_client = IBKRClient()
+else:
+    _ibkr_client = None
+
 from src.data.cache import get_cache
 from src.data.models import (
     CompanyNews,
@@ -26,24 +35,36 @@ def get_prices(ticker: str, start_date: str, end_date: str) -> list[Price]:
     """Fetch price data from cache or API."""
     # Create a cache key that includes all parameters to ensure exact matches
     cache_key = f"{ticker}_{start_date}_{end_date}"
-    
+
     # Check cache first - simple exact match
     if cached_data := _cache.get_prices(cache_key):
         return [Price(**price) for price in cached_data]
 
     # If not in cache, fetch from API
-    headers = {}
-    if api_key := os.environ.get("FINANCIAL_DATASETS_API_KEY"):
-        headers["X-API-KEY"] = api_key
+    if DATA_PROVIDER == "ibkr" and _ibkr_client:
+        df = _ibkr_client.get_price_history(ticker, start_date, end_date)
+        prices = [
+            Price(
+                open=row.open,
+                close=row.close,
+                high=row.high,
+                low=row.low,
+                volume=int(row.volume),
+                time=row.time.strftime("%Y-%m-%d %H:%M:%S"),
+            )
+            for row in df.itertuples()
+        ]
+    else:
+        headers = {}
+        if api_key := os.environ.get("FINANCIAL_DATASETS_API_KEY"):
+            headers["X-API-KEY"] = api_key
+        url = f"https://api.financialdatasets.ai/prices/?ticker={ticker}&interval=day" f"&interval_multiplier=1&start_date={start_date}&end_date={end_date}"
+        response = requests.get(url, headers=headers)
+        if response.status_code != 200:
+            raise Exception(f"Error fetching data: {ticker} - {response.status_code} - {response.text}")
 
-    url = f"https://api.financialdatasets.ai/prices/?ticker={ticker}&interval=day&interval_multiplier=1&start_date={start_date}&end_date={end_date}"
-    response = requests.get(url, headers=headers)
-    if response.status_code != 200:
-        raise Exception(f"Error fetching data: {ticker} - {response.status_code} - {response.text}")
-
-    # Parse response with Pydantic model
-    price_response = PriceResponse(**response.json())
-    prices = price_response.prices
+        price_response = PriceResponse(**response.json())
+        prices = price_response.prices
 
     if not prices:
         return []
@@ -62,24 +83,27 @@ def get_financial_metrics(
     """Fetch financial metrics from cache or API."""
     # Create a cache key that includes all parameters to ensure exact matches
     cache_key = f"{ticker}_{period}_{end_date}_{limit}"
-    
+
     # Check cache first - simple exact match
     if cached_data := _cache.get_financial_metrics(cache_key):
         return [FinancialMetrics(**metric) for metric in cached_data]
 
     # If not in cache, fetch from API
-    headers = {}
-    if api_key := os.environ.get("FINANCIAL_DATASETS_API_KEY"):
-        headers["X-API-KEY"] = api_key
+    if DATA_PROVIDER == "ibkr" and _ibkr_client:
+        _ = _ibkr_client.get_fundamentals(ticker)
+        financial_metrics = []
+    else:
+        headers = {}
+        if api_key := os.environ.get("FINANCIAL_DATASETS_API_KEY"):
+            headers["X-API-KEY"] = api_key
 
-    url = f"https://api.financialdatasets.ai/financial-metrics/?ticker={ticker}&report_period_lte={end_date}&limit={limit}&period={period}"
-    response = requests.get(url, headers=headers)
-    if response.status_code != 200:
-        raise Exception(f"Error fetching data: {ticker} - {response.status_code} - {response.text}")
+        url = f"https://api.financialdatasets.ai/financial-metrics/?ticker={ticker}&report_period_lte={end_date}&limit={limit}&period={period}"
+        response = requests.get(url, headers=headers)
+        if response.status_code != 200:
+            raise Exception(f"Error fetching data: {ticker} - {response.status_code} - {response.text}")
 
-    # Parse response with Pydantic model
-    metrics_response = FinancialMetricsResponse(**response.json())
-    financial_metrics = metrics_response.financial_metrics
+        metrics_response = FinancialMetricsResponse(**response.json())
+        financial_metrics = metrics_response.financial_metrics
 
     if not financial_metrics:
         return []
@@ -133,7 +157,7 @@ def get_insider_trades(
     """Fetch insider trades from cache or API."""
     # Create a cache key that includes all parameters to ensure exact matches
     cache_key = f"{ticker}_{start_date or 'none'}_{end_date}_{limit}"
-    
+
     # Check cache first - simple exact match
     if cached_data := _cache.get_insider_trades(cache_key):
         return [InsiderTrade(**trade) for trade in cached_data]
@@ -193,7 +217,7 @@ def get_company_news(
     """Fetch company news from cache or API."""
     # Create a cache key that includes all parameters to ensure exact matches
     cache_key = f"{ticker}_{start_date or 'none'}_{end_date}_{limit}"
-    
+
     # Check cache first - simple exact match
     if cached_data := _cache.get_company_news(cache_key):
         return [CompanyNews(**news) for news in cached_data]
@@ -251,20 +275,33 @@ def get_market_cap(
     """Fetch market cap from the API."""
     # Check if end_date is today
     if end_date == datetime.datetime.now().strftime("%Y-%m-%d"):
-        # Get the market cap from company facts API
-        headers = {}
-        if api_key := os.environ.get("FINANCIAL_DATASETS_API_KEY"):
-            headers["X-API-KEY"] = api_key
+        if DATA_PROVIDER == "ibkr" and _ibkr_client:
+            xml = _ibkr_client.get_fundamentals(ticker, report_type="ReportSnapshot")
+            if xml:
+                import xml.etree.ElementTree as ET
 
-        url = f"https://api.financialdatasets.ai/company/facts/?ticker={ticker}"
-        response = requests.get(url, headers=headers)
-        if response.status_code != 200:
-            print(f"Error fetching company facts: {ticker} - {response.status_code}")
+                root = ET.fromstring(xml)
+                val = root.findtext(".//MKTCAP") or root.findtext(".//MarketCap")
+                if val:
+                    try:
+                        return float(val)
+                    except ValueError:
+                        pass
             return None
+        else:
+            headers = {}
+            if api_key := os.environ.get("FINANCIAL_DATASETS_API_KEY"):
+                headers["X-API-KEY"] = api_key
 
-        data = response.json()
-        response_model = CompanyFactsResponse(**data)
-        return response_model.company_facts.market_cap
+            url = f"https://api.financialdatasets.ai/company/facts/?ticker={ticker}"
+            response = requests.get(url, headers=headers)
+            if response.status_code != 200:
+                print(f"Error fetching company facts: {ticker} - {response.status_code}")
+                return None
+
+            data = response.json()
+            response_model = CompanyFactsResponse(**data)
+            return response_model.company_facts.market_cap
 
     financial_metrics = get_financial_metrics(ticker, end_date)
     if not financial_metrics:
