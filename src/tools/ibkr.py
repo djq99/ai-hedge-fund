@@ -18,7 +18,9 @@ class IBKRClient:
         if self.ib.isConnected():
             self.ib.disconnect()
 
-    def get_price_history(self, ticker: str, start_date: str, end_date: str) -> pd.DataFrame:
+    def get_price_history(
+        self, ticker: str, start_date: str, end_date: str
+    ) -> pd.DataFrame:
         """Fetch daily historical prices for `ticker` from IBKR."""
         contract = Stock(ticker, "SMART", "USD")
         end_ts = end_date + " 23:59:59"
@@ -27,14 +29,16 @@ class IBKRClient:
         end_dt = datetime.strptime(end_date, "%Y-%m-%d")
         duration_days = (end_dt - start_dt).days + 1
         duration_str = f"{duration_days} D"
-        bars = self.ib.reqHistoricalData(
-            contract,
-            endDateTime=end_ts,
-            durationStr=duration_str,
-            barSizeSetting="1 day",
-            whatToShow="ADJUSTED_LAST",
-            useRTH=True,
-            formatDate=1,
+        bars = self.ib.run(
+            self.ib.reqHistoricalDataAsync(
+                contract,
+                endDateTime=end_ts,
+                durationStr=duration_str,
+                barSizeSetting="1 day",
+                whatToShow="ADJUSTED_LAST",
+                useRTH=True,
+                formatDate=1,
+            )
         )
         df = util.df(bars)
         if not df.empty:
@@ -44,5 +48,7 @@ class IBKRClient:
     def get_fundamentals(self, ticker: str, report_type: str = "ReportsFinStatements") -> str:
         """Request fundamental data report from IBKR (XML string)."""
         contract = Stock(ticker, "SMART", "USD")
-        data = self.ib.reqFundamentalData(contract, reportType=report_type)
+        data = self.ib.run(
+            self.ib.reqFundamentalDataAsync(contract, reportType=report_type)
+        )
         return data or ""
